@@ -70,6 +70,52 @@ class restrackController extends Controller
         }
     }
 
+    public function saveFcmToken(Request $request)
+    {
+        try {
+            $request->validate([
+                'username' => 'required|string',
+                'fcm_token' => 'required|string',
+            ]);
+
+            $user = User::where('username', $request->username)
+                ->orWhere('email', $request->username)
+                ->first();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 404,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            $user->fcm_token = $request->fcm_token;
+            $user->save();
+
+            Log::info('FCM token saved for user', [
+                'user_id' => $user->id,
+                'username' => $user->username,
+            ]);
+
+            return response()->json([
+                'status' => 200,
+                'message' => 'FCM token saved successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to save FCM token', [
+                'error' => $e->getMessage(),
+                'username' => $request->username ?? 'unknown',
+            ]);
+
+            return response()->json([
+                'status' => 500,
+                'message' => 'Failed to save FCM token',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function packagesPerHub(Request $request)
     {
 
@@ -578,7 +624,7 @@ class restrackController extends Controller
         IF(pk.status = 1, 'INTRANSIT', 
         IF(pk.status = 2, 'DELIVERED', 
         IF(pk.status = 3,'RECEIVED', 
-        IF(pk.status = 4, 'PICKED', 'UNKNOWN'))))) as STATUS 
+        IF(pk.status = 4, 'REFERRED', 'UNKNOWN'))))) as STATUS 
         FROM package pk LEFT JOIN facility fa ON pk.facilityid = fa.id WHERE pk.delivered_on IS NULL AND pk.created_at" . getTimezoneAwareDateFilter(30);
         // FROM package pk LEFT JOIN facility fa ON pk.facilityid = fa.id WHERE pk.delivered_on IS NULL AND DATE(pk.created_at) = '" . $provided_date . "'";
         // (CURDATE() - INTERVAL 1 MONTH ) and (CURDATE() + 1 )
@@ -598,7 +644,7 @@ class restrackController extends Controller
         IF(pk.status = 1, 'INTRANSIT', 
         IF(pk.status = 2, 'DELIVERED', 
         IF(pk.status = 3,'RECEIVED', 
-        IF(pk.status = 4, 'PICKED', 'UNKNOWN'))))) as STATUS 
+        IF(pk.status = 4, 'REFERRED', 'UNKNOWN'))))) as STATUS 
         FROM package pk 
         LEFT JOIN facility fa ON pk.facilityid = fa.id 
         WHERE pk.delivered_on IS NULL 
@@ -621,7 +667,7 @@ class restrackController extends Controller
         IF(pk.status = 1, 'INTRANSIT', 
         IF(pk.status = 2, 'DELIVERED', 
         IF(pk.status = 3,'RECEIVED', 
-        IF(pk.status = 4, 'PICKED', 'UNKNOWN'))))) as STATUS 
+        IF(pk.status = 4, 'REFERRED', 'UNKNOWN'))))) as STATUS 
         FROM package pk 
         LEFT JOIN facility fa ON pk.facilityid = fa.id 
         WHERE pk.delivered_on IS NULL 
@@ -645,7 +691,7 @@ class restrackController extends Controller
         IF(pk.status = 1, 'INTRANSIT', 
         IF(pk.status = 2, 'DELIVERED', 
         IF(pk.status = 3,'RECEIVED', 
-        IF(pk.status = 4, 'PICKED', 'UNKNOWN'))))) as STATUS 
+        IF(pk.status = 4, 'REFERRED', 'UNKNOWN'))))) as STATUS 
         FROM package pk 
         LEFT JOIN facility fa ON pk.facilityid = fa.id 
         WHERE pk.delivered_on IS NULL 
@@ -928,6 +974,62 @@ class restrackController extends Controller
         $fac_test  = ['facilities' => $fac_arr, 'test_types' => $test_arr];
 
         return response()->json($fac_test);
+    }
+
+    public function getFacilityVisits(Request $request)
+    {
+        try {
+            $userId = $request->input('user_id') ?? $request->header('X-User-Id');
+            $thedate = $request->input('thedate');
+            
+            if (!$userId) {
+                return response()->json([
+                    'status' => 400,
+                    'message' => 'User ID is required'
+                ], 400);
+            }
+            
+            if (!$thedate) {
+                return response()->json([
+                    'status' => 400,
+                    'message' => 'Date is required'
+                ], 400);
+            }
+            
+            // Get all facility visits for this user on the specified date
+            $visits = DB::table('checklogin as cl')
+                ->leftJoin('facility as f', 'cl.facilityid', '=', 'f.id')
+                ->where('cl.staffid', $userId)
+                ->where('cl.thedate', $thedate)
+                ->select(
+                    'cl.id',
+                    'cl.facilityid',
+                    'cl.thedate',
+                    'cl.latitude',
+                    'cl.longitude',
+                    'cl.place_name',
+                    'f.name as facility_name'
+                )
+                ->orderBy('cl.id', 'desc')
+                ->get();
+            
+            return response()->json([
+                'status' => 200,
+                'count' => $visits->count(),
+                'visits' => $visits
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error fetching facility visits', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'status' => 500,
+                'message' => 'Error fetching facility visits: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // NFT store functionality
@@ -1834,6 +1936,10 @@ class restrackController extends Controller
                 ], 400);
             }
 
+            $userId = $post_data['userId'] ?? $post_data['staffId'] ?? 1;
+            $user = \DB::table('users')->where('id', $userId)->first();
+            $userHubId = $user ? $user->hubid : null;
+
             $savedPackages = [];
             $samples = [];
             $errors = [];
@@ -1856,42 +1962,29 @@ class restrackController extends Controller
                         continue;
                     }
 
-                    // Validate and sanitize facilityid
                     $facilityid = $packageData['facilityid'] ?? null;
                     if ($facilityid === 'unknown' || !is_numeric($facilityid) || empty($facilityid)) {
-                        $facilityid = 1; // Default facility ID
-                        \Log::warning("Invalid facilityid provided, using default. Original: {$packageData['facilityid']}, Barcode: {$packageData['barcode']}");
+                        $facilityid = 1;
                     }
                     
-                    // Convert to integer to ensure it's numeric
                     $facilityid = (int) $facilityid;
-                    
-                    // Get the hubid from the facility
-                    $facility = \DB::table('facility')->where('id', $facilityid)->first();
-                    $hubid = $facility ? $facility->hubid : 1; // Default to 1 if facility not found
-                    
-                    \Log::info("Saving prepared package. Barcode: {$packageData['barcode']}, FacilityID: {$facilityid}, HubID: {$hubid}");
+                    $hubid = $userHubId ?: 1;
                     
                     $packageId = \DB::table('package')->insertGetId([
                         'barcode' => $packageData['barcode'],
                         'facilityid' => $facilityid,
                         'hubid' => $hubid,
-                        'final_destination' => $packageData['final_destination'] ?? '888', // Default destination
+                        'final_destination' => $packageData['final_destination'] ?? '888',
                         'created_by' => $packageData['staffId'] ?? 1,
-                        'type' => 1, // Single package type
+                        'type' => 1,
                         'numberofsamples' => $packageData['numbeOfSamples'] ?? $packageData['numberOfSamples'] ?? 1,
                         'is_tracked_from_facility' => 1,
                         'is_batch' => 0,
-                        'status' => 0, // Set status to 0 (waiting for pickup)
+                        'status' => 0,
                         'created_at' => now(),
                         'updated_at' => now()
                     ]);
 
-                    // Note: Prepared packages (status 0) do NOT get movement events
-                    // Movement events are only created when packages are picked up (status 1+)
-                    // This ensures they appear in the "packages awaiting pickup" list
-
-                    // Store package info for notification
                     $savedPackages[] = [
                         'id' => $packageId,
                         'barcode' => $packageData['barcode'],
@@ -1900,7 +1993,6 @@ class restrackController extends Controller
                         'facility_name' => $packageData['facility_name'] ?? 'Unknown Facility'
                     ];
 
-                    // Prepare sample data for notification
                     $samples[] = [
                         'sample_id' => $packageData['barcode'],
                         'sample_name' => $packageData['packageName'] ?? 'Prepared Package'
@@ -2092,13 +2184,78 @@ class restrackController extends Controller
         }
     }
 
-    /**
-     * Get packages awaiting pickup for Pick Sample Package screen
-     */
+    public function getPreparedPackagesForHub($userId)
+    {
+        try {
+            $user = \DB::table('users')->where('id', $userId)->first();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 404,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            $hubId = $user->hubid;
+
+            $packages = \DB::table('package')
+                ->leftJoin('facility', 'package.facilityid', '=', 'facility.id')
+                ->leftJoin('testtypes', 'package.test_type', '=', 'testtypes.id')
+                ->where('package.hubid', $hubId)
+                ->where('package.status', 0)
+                ->select(
+                    'package.id',
+                    'package.barcode',
+                    'package.numberofsamples',
+                    'package.created_at',
+                    'package.status',
+                    'package.final_destination',
+                    'facility.name as facility_name',
+                    'testtypes.name as test_type_name'
+                )
+                ->orderBy('package.created_at', 'desc')
+                ->get();
+
+            $formattedPackages = $packages->map(function ($package) {
+                return [
+                    'id' => $package->id,
+                    'barcode' => $package->barcode,
+                    'packageName' => 'Prepared Package',
+                    'packageType' => 'samples',
+                    'numberOfSamples' => $package->numberofsamples ?? 1,
+                    'facility_name' => $package->facility_name ?? 'Unknown Facility',
+                    'test_type_name' => $package->test_type_name,
+                    'datePrepared' => $package->created_at,
+                    'status' => 'Waiting for Pickup',
+                    'created_at' => $package->created_at,
+                ];
+            });
+
+            \Log::info('Fetched prepared packages for hub', [
+                'user_id' => $userId,
+                'hub_id' => $hubId,
+                'packages_count' => $formattedPackages->count()
+            ]);
+
+            return response()->json([
+                'status' => 200,
+                'message' => 'Prepared packages fetched successfully',
+                'packages' => $formattedPackages
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching prepared packages for hub: ' . $e->getMessage());
+            
+            return response()->json([
+                'status' => 500,
+                'message' => 'Error fetching prepared packages: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getPackagesAwaitingPickup($userId)
     {
         try {
-            // Get the user's hub to determine which packages they can see
             $user = \DB::table('users')->where('id', $userId)->first();
             if (!$user) {
                 \Log::error('User not found for packages awaiting pickup', ['user_id' => $userId]);

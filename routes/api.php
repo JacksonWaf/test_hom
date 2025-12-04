@@ -77,10 +77,14 @@ Route::group(['middleware' => 'api'], function () {
 	Route::post('/restrack_new/forgot-password/reset', 'ForgotPasswordController@resetPassword');
 	
 	Route::post('/restrack_new/login/', 'restrackController@login');
+	Route::post('/restrack_new/save-fcm-token/', 'restrackController@saveFcmToken');
 	Route::post('/restrack_new/send_package_invitation/', 'restrackController@sendPackageInvitation');
 	Route::post('/restrack_new/save_prepared_packages/', 'restrackController@savePreparedPackages');
 	Route::get('/restrack_new/get_prepared_packages/user/{userId}', 'restrackController@getPreparedPackages');
+	Route::get('/restrack_new/get_prepared_packages_hub/user/{userId}', 'restrackController@getPreparedPackagesForHub');
 	Route::get('/restrack_new/get_packages_awaiting_pickup/user/{userId}', 'restrackController@getPackagesAwaitingPickup');
+	Route::post('/restrack_new/request_rider/{packageId}', 'SamplePickupRequestController@requestRiderApi');
+	Route::get('/restrack_new/get_facility_visits/', 'restrackController@getFacilityVisits');
 
 	// Role switching API routes for mobile app
 	Route::post('/role/switch', 'RoleSwitchController@switchRole');
@@ -93,4 +97,11 @@ Route::group(['middleware' => 'api'], function () {
     Route::get('/forms/approved', 'FormApiController@index_status');
     Route::get('/forms/approved/{form_id}', 'FormApiController@show_status');
     Route::get('/forms/colors', 'FormApiController@colors');
+
+    Route::get('/notifications', 'NotificationController@index');
+    Route::get('/notifications/unread', 'NotificationController@getUnread');
+    Route::get('/notifications/count', 'NotificationController@getCount');
+    Route::post('/notifications/{id}/read', 'NotificationController@markAsRead');
+    Route::post('/notifications/read-all', 'NotificationController@markAllAsRead');
+    Route::delete('/notifications/{id}', 'NotificationController@delete');
 });

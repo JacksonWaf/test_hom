@@ -1,6 +1,7 @@
 /node_modules
 /public/storage
 /storage/*.key
+/storage/app/firebase-service-account.json
 /vendor
 /.idea
 Homestead.json
@@ -20,3 +21,12 @@ restore_db.sql
 ROLE_SWITCHING_CORRECTED_README.md
 *_README.md
 *_CORRECTED_README.md
+
+# Documentation and instruction files
+*.txt
+!HUB_COORDINATOR_ACCESS_METHOD.txt
+!DOCKER_MIGRATION_COMMANDS.txt
+test_push.php
+
+# Migration deployment guides
+MIGRATION_DEPLOYMENT_GUIDE.md
