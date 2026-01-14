@@ -10,6 +10,7 @@ scratch. This page gets rid of all links and provides the needed markup only.
   <title>UNHLS | Sample Tracker</title>
   <!-- Tell the browser to be responsive to screen width -->
   <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 <link rel="icon" href="favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="{{ asset('css/bootstrap.min.css') }}">
@@ -199,7 +200,7 @@ desired effect
               </div>
             </div>
             <div class="form-group">
-              <label for="dateofweek" class="col-sm-3 control-label">{{ Form::label('dateofweek', 'Date') }}</label>
+              <label for="facilityid" class="col-sm-3 control-label">{{ Form::label('facilityid', 'Facility') }}</label>
               <div class="col-sm-9">
                 {{Form::select('facilityid', array_merge_maintain_keys(array(''=>'Facility'),getFacilitiesforHub(Auth::user()->hubid)), null, ['class'=>'form-control'])}}
               </div>
