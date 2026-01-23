@@ -1974,7 +1974,7 @@ class restrackController extends Controller
                         'barcode' => $packageData['barcode'],
                         'facilityid' => $facilityid,
                         'hubid' => $hubid,
-                        'final_destination' => $packageData['final_destination'] ?? '888',
+                        'final_destination' => $packageData['final_destination'] ?? '',
                         'created_by' => $packageData['staffId'] ?? 1,
                         'type' => 1,
                         'numberofsamples' => $packageData['numbeOfSamples'] ?? $packageData['numberOfSamples'] ?? 1,
@@ -2369,7 +2369,7 @@ class restrackController extends Controller
                     'name' => $package->test_name ?? 'Unknown Test',
                     'hubid' => 1, // Default hub
                     'numbeOfSamples' => $package->numberofsamples,
-                    'finalDestination' => $package->final_destination ?? '888',
+                    'finalDestination' => $package->final_destination ?? '',
                     'staffId' => $package->created_by,
                     'testType' => $package->test_type ?? 1,
                     'type' => 'samples',
